@@ -3,11 +3,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from model.decoder import dec_builder, Integrator
+from model.decoder import dec_builder
 from model.content_encoder import content_enc_builder
 from model.references_encoder import comp_enc_builder
-from model.Component_Attention_Module import ComponentAttentiomModule, Get_style_components
+from model.Component_Attention_Module import ComponentAttentiomModule
 from model.memory import Memory
+from model.VectorQuantizer import  VectorQuantizer,VectorQuantizerEMA
 
 
 class Generator(nn.Module):
@@ -15,35 +16,81 @@ class Generator(nn.Module):
     Generator
     """
 
-    def __init__(self, C_in, C, C_out, cfg, comp_enc, dec, content_enc, integrator_args):
+    def __init__(self,C_in, C, C_out):
         super().__init__()
-        self.num_heads = cfg.num_heads
-        self.kshot = cfg.kshot
-        self.component_encoder = comp_enc_builder(C_in, C, **comp_enc)  # 构建部件风格编码器
-        self.mem_shape = self.component_encoder.out_shape  # [256, 16, 16]
-        assert self.mem_shape[-1] == self.mem_shape[-2]  # H == W
+        # 风格编码器
+        self.styleGen = comp_enc_builder(C_in, C, C_out) # B*C_in*256*256 -> B*C_out*32*32
 
-        self.Get_style_components = Get_style_components()
-        self.Get_style_components_1 = Get_style_components()
-        self.Get_style_components_2 = Get_style_components()
-        self.cam = ComponentAttentiomModule()
+        # 内容编码器
+        self.contentGen = content_enc_builder(C_in, C, C_out) # B*C_in*256*256 -> B*C_out*32*32
 
-        # memory
-        self.memory = Memory()
+        # codebook使用VQ-VAE进行编码
+        num_embeddings = 512 # 嵌入向量数量，过多容易过拟合，过少容易欠拟合
+        embedding_dim = 1024 # 32*32 
+        commitment_cost = 0.25
+        decay = 0
+        self.Codebook = VectorQuantizer(num_embeddings, embedding_dim, commitment_cost)
 
-        self.shot = cfg.kshot
+        # MHA多头注意力机制，输入style生成的KV,CodeBook生成的Q
+        self.MHA = ComponentAttentiomModule()
 
-        C_content = content_enc['C_out']
-        C_reference = comp_enc['C_out']
-        self.content_encoder = content_enc_builder(C_in, C, **content_enc)
+        # 解码器
+        self.Decoder = dec_builder(C_out,C_in)  # B*C_out*32*32 -> B*C_in*256*256
 
-        self.decoder = dec_builder(
-            C, C_out, **dec
-        )
+    
+    def get_style_matrix(self,input):
+        input = self.styleGen(input)
+        query_cb,style_cb_loss = self.Codebook(input)
+        style_matrix = self.MHA(input,query_cb)
 
-        self.Integrator = Integrator(C * 8, **integrator_args, C_content=C_content, C_reference=C_reference)
+        return style_matrix,style_cb_loss
+    
+    def get_content_matrix(self,input):
+        input = self.contentGen(input)
+        query_cb,content_cb_loss = self.Codebook(input)
+        content_matrix = self.MHA(input,query_cb)
 
-        self.Integrator_local = Integrator(C * 8, **integrator_args, C_content=C_content, C_reference=0)
+        return content_matrix,content_cb_loss
+        
+    def decode(self,input):
+        fake_img = self.Decoder(input)
+        return fake_img
+
+
+
+        
+
+
+    # def __init__(self, C_in, C, C_out, cfg, comp_enc, dec, content_enc, integrator_args):
+    #     super().__init__()
+    #     self.num_heads = cfg.num_heads
+    #     self.kshot = cfg.kshot
+    #     self.component_encoder = comp_enc_builder(C_in, C, **comp_enc)  # 构建部件风格编码器
+    #     self.content_encoder = content_enc_builder(C_in, C, **content_enc)
+    #     self.mem_shape = self.component_encoder.out_shape  # [256, 16, 16]
+    #     assert self.mem_shape[-1] == self.mem_shape[-2]  # H == W
+
+    #     self.Get_style_components = Get_style_components()
+    #     self.Get_style_components_1 = Get_style_components()
+    #     self.Get_style_components_2 = Get_style_components()
+    #     self.cam = ComponentAttentiomModule()
+
+    #     # memory
+    #     self.memory = Memory()
+
+    #     self.shot = cfg.kshot
+
+    #     C_content = content_enc['C_out']
+    #     C_reference = comp_enc['C_out']
+    #     self.content_encoder = content_enc_builder(C_in, C, **content_enc)
+
+    #     self.decoder = dec_builder(
+    #         C, C_out, **dec
+    #     )
+
+    #     self.Integrator = Integrator(C * 8, **integrator_args, C_content=C_content, C_reference=C_reference)
+
+    #     self.Integrator_local = Integrator(C * 8, **integrator_args, C_content=C_content, C_reference=0)
 
     def reset_memory(self):
         """

@@ -47,19 +47,19 @@ class Decoder(nn.Module):
 
 
 
-def dec_builder(C, C_out, norm='none', activ='relu', out='sigmoid'):
+def dec_builder(C_in, C_out, norm='none', activ='relu', out='sigmoid'):
 
     ConvBlk = partial(ConvBlock, norm=norm, activ=activ)
     ResBlk = partial(ResBlock, norm=norm, activ=activ)
 
     layers = [
-        ResBlk(C * 8, C * 8, 3, 1),
-        ResBlk(C * 8, C * 8, 3, 1),
-        ResBlk(C * 8, C * 8, 3, 1),
-        ConvBlk(C * 8, C * 4, 3, 1, 1, upsample=True),  # 32x32
-        ConvBlk(C * 4, C * 2, 3, 1, 1, upsample=True),  # 64x64
-        ConvBlk(C * 2, C * 1, 3, 1, 1, upsample=True),  # 128x128
-        ConvBlk(C * 1, C_out, 3, 1, 1)
+        ResBlk(C_in, C_in, 3, 1),
+        ResBlk(C_in, C_in, 3, 1),
+        ResBlk(C_in, C_in, 3, 1),
+        ConvBlk(C_in, C_in//2, 3, 1, 1, upsample=True),  # 32x32
+        ConvBlk(C_in//2, C_in//4, 3, 1, 1, upsample=True),  # 64x64
+        ConvBlk(C_in//4, C_in//8, 3, 1, 1, upsample=True),  # 128x128
+        ConvBlk(C_in//8, C_out, 3, 1, 1)
     ]
 
     return Decoder(layers, out=out)

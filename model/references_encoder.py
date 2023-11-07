@@ -12,14 +12,9 @@ class ReferenceEncoder(nn.Module):
         self.sigmoid = sigmoid
 
     def forward(self, x):
-        ret_feats = {}
-
         for layer in self.layers:
             x = layer(x)
-        ret_feats["last"] = x
-        if self.sigmoid:
-            ret_feats = {k: nn.Sigmoid()(v) for k, v in ret_feats.items()}
-        return ret_feats
+        return x
 
 
 def comp_enc_builder(C_in, C, C_out, norm='none', activ='relu', pad_type='reflect', skip_scale_var=False, sigmoid=True):
