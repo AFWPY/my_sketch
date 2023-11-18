@@ -1,11 +1,16 @@
-# generator
-from .generator import Generator
+from model.model import CBGANModel
 
-# discriminator
-from .discriminator import disc_builder
+def create_model(opt):
+    """Create a model given the option.
 
-def generator_dispatch():
-    return Generator
+    This function warps the class CustomDatasetDataLoader.
+    This is the main interface between this package and 'train.py'/'test.py'
 
-from .content_encoder import content_enc_builder
-from .decoder import dec_builder
+    Example:
+        >>> from models import create_model
+        >>> model = create_model(opt)
+    """
+    model = CBGANModel
+    instance = model(opt)
+    print("model [%s] was created" % type(instance).__name__)
+    return instance
