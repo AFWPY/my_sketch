@@ -17,7 +17,7 @@ class CBGANModel(BaseModel):
 
         self.loss_names = ['loss_G_content', 'loss_G_style_rec','loss_D_content','vq_loss_content','vq_loss_style']
     
-        self.gen = Generator(3,8,256).to(self.device)
+        self.gen = Generator(input_nc=3, output_nc=3,num_downs=8).to(self.device)
         self.dis = NLayerDiscriminator(3,64).to(self.device)
 
         self.criterionGAN = GANLoss('lsgan').to(self.device)
@@ -44,10 +44,7 @@ class CBGANModel(BaseModel):
 
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
-        self.fake_style_matrix,self.vq_loss_style = self.gen.get_style_matrix(self.style)  # 输入风格图像经过codebook得到Query
-        self.fake_content_matrix,self.vq_loss_content = self.gen.get_content_matrix(self.content)  # 输入内容图像经过codebook得到Query
-        self.fake_style = self.gen.decode(self.fake_style_matrix) #解码还原风格图
-        self.fake_content = self.gen.decode(self.fake_content_matrix) #解码生成带内容的风格图
+        self.fake_style,self.fake_content,self.vq_loss_style,self.vq_loss_content = self.gen(self.style,self.content)
 
     def backward_G(self):
         self.loss_G_content = self.criterionGAN(self.dis(self.fake_content), True)
