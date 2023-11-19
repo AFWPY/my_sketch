@@ -17,8 +17,15 @@ class CBGANModel(BaseModel):
 
         self.loss_names = ['loss_G_content', 'loss_G_style_rec','loss_D_content','vq_loss_content','vq_loss_style']
     
-        self.gen = Generator(input_nc=3, output_nc=3,num_downs=16).to(self.device)
-        self.dis = NLayerDiscriminator(3,64).to(self.device)
+        self.gen = Generator(input_nc=3, output_nc=3,num_downs=16)
+        self.dis = NLayerDiscriminator(3,64)
+
+        if torch.cuda.device_count() > 1:
+            self.gen = nn.DataParallel(self.gen,device_ids=[0, 1])
+            self.dis = nn.DataParallel(self.dis,device_ids=[0, 1])
+        
+        self.gen.to(self.device)
+        self.dis.to(self.device)
 
         self.criterionGAN = GANLoss('lsgan').to(self.device)
         self.criterionCycle = torch.nn.L1Loss().to(self.device)
@@ -48,12 +55,17 @@ class CBGANModel(BaseModel):
 
     def backward_G(self):
         self.loss_G_content = self.criterionGAN(self.dis(self.fake_content), True)
-
         self.loss_G_style_rec = self.criterionCycle(self.fake_style, self.style)
 
         self.loss_G = self.vq_loss_content*100 + self.vq_loss_style*100 + self.loss_G_content*100 + self.loss_G_style_rec
+        # 如果self.loss_G是一个向量而不是标量，那么对其取平均得到标量
+        if self.loss_G.dim() > 0:  # 检查loss_G是否为标量
+            self.loss_G = self.loss_G.mean()
 
+        # print(f"loss_G : {self.loss_G.shape}")
+        # 这时 self.loss_G 应该是一个标量，可以安全地调用 backward()
         self.loss_G.backward()
+
 
     def backward_D_basic(self, netD, real, fake):
         # Real
@@ -64,6 +76,8 @@ class CBGANModel(BaseModel):
         loss_D_fake = self.criterionGAN(pred_fake, False)
         # Combined loss and calculate gradients
         loss_D = (loss_D_real + loss_D_fake) * 0.5
+        if loss_D.dim() > 0:  # 检查loss_G是否为标量
+            loss_D = loss_D.mean()
         loss_D.backward()
         return loss_D
 

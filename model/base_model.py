@@ -136,7 +136,17 @@ class BaseModel(ABC):
         errors_ret = OrderedDict()
         for name in self.loss_names:
             if isinstance(name, str):
-                errors_ret[name] = float(getattr(self, name))  # float(...) works for both scalar tensor and float number
+                attr = getattr(self, name)
+                if torch.is_tensor(attr):
+                    # 如果是多元素张量，取平均值
+                    if attr.nelement() > 1:
+                        errors_ret[name] = attr.mean().item()
+                    # 如果是单元素张量，使用.item()转换为标量
+                    else:
+                        errors_ret[name] = attr.item()
+                else:
+                    # 如果已经是标量（浮点数），直接使用
+                    errors_ret[name] = attr  # float(...) works for both scalar tensor and float number
         return errors_ret
 
     def save_networks(self, epoch):

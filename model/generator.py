@@ -164,7 +164,7 @@ class UnetSkipConnectionBlock(nn.Module):
                 # 然后并行地执行MHA和VQ操作               
                 query_s ,vq_loss_s  = self.vq(down_s)
                 MHA_s = self.MHA(down_s,query_s)
-                query_c ,vq_loss_c  = self.vq(down_c)
+                query_c ,vq_loss_c  = self.vq(down_c,key="Content")
                 MHA_c = self.MHA(down_c,query_c)
                 # 执行上采样
                 up_s = self.up(MHA_s)

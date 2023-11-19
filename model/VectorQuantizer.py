@@ -14,7 +14,7 @@ class VectorQuantizer(nn.Module):
         self._embedding.weight.data.uniform_(-1 / self._num_embeddings, 1 / self._num_embeddings)
 
 
-    def forward(self, inputs):
+    def forward(self, inputs,key = None):
         # 传入的是图片经过encoder后的feature maps
         # convert inputs from BCHW
         input_shape = inputs.shape
@@ -38,7 +38,10 @@ class VectorQuantizer(nn.Module):
         # Loss
         e_latent_loss = F.mse_loss(quantized.detach(), inputs)
         q_latent_loss = F.mse_loss(quantized, inputs.detach())
-        loss = q_latent_loss + self._commitment_cost * e_latent_loss
+        if key == "Content":
+            loss = e_latent_loss
+        else:
+            loss = q_latent_loss + self._commitment_cost * e_latent_loss
 
         quantized = inputs + (quantized - inputs).detach()
         avg_probs = torch.mean(encodings, dim=0)
