@@ -15,7 +15,7 @@ def setup_opt():
     parser.add_argument('--dataroot', required=True, help='path to images (should have subfolders trainA, trainB, valA, valB, etc)')
     parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
     parser.add_argument('--num_threads', default=8, type=int, help='# threads for loading data')
-    parser.add_argument('--batch_size', type=int, default=4, help='input batch size')
+    parser.add_argument('--batch_size', type=int, default=8, help='input batch size')
     parser.add_argument('--load_size', type=int, default=286, help='scale images to this size')
     parser.add_argument('--crop_size', type=int, default=256, help='then crop to this size')
     parser.add_argument('--dataset_mode', type=str, default='unaligned', help='chooses how datasets are loaded. [unaligned | aligned | single | colorization]')
@@ -60,7 +60,8 @@ def train(opt):
             model.set_input(data)         # unpack data from dataset and apply preprocessing
             model.optimize_parameters(i)
 
-        model.save_images(image_path,epoch)
+        if epoch%100==0:
+            model.save_images(image_path,epoch) 
 
         # 保存模型
         if epoch % 10 == 0:

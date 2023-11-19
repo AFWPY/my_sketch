@@ -17,7 +17,7 @@ class CBGANModel(BaseModel):
 
         self.loss_names = ['loss_G_content', 'loss_G_style_rec','loss_D_content','vq_loss_content','vq_loss_style']
     
-        self.gen = Generator(input_nc=3, output_nc=3,num_downs=8).to(self.device)
+        self.gen = Generator(input_nc=3, output_nc=3,num_downs=16).to(self.device)
         self.dis = NLayerDiscriminator(3,64).to(self.device)
 
         self.criterionGAN = GANLoss('lsgan').to(self.device)
@@ -51,7 +51,7 @@ class CBGANModel(BaseModel):
 
         self.loss_G_style_rec = self.criterionCycle(self.fake_style, self.style)
 
-        self.loss_G = self.vq_loss_content*0.5 + self.vq_loss_style + self.loss_G_content + self.loss_G_style_rec*0.5
+        self.loss_G = self.vq_loss_content*100 + self.vq_loss_style*100 + self.loss_G_content*100 + self.loss_G_style_rec
 
         self.loss_G.backward()
 
@@ -81,12 +81,12 @@ class CBGANModel(BaseModel):
         self.optimizer_G.zero_grad()  # set G_A and G_B's gradients to zero
         self.backward_G()             # calculate gradients for G_A and G_B
         self.optimizer_G.step()       # update G_A and G_B's weights
-        if i%100==0:
-        # D_A and D_B
-            self.set_requires_grad([self.dis], True)
-            self.optimizer_D.zero_grad()   # set D_A and D_B's gradients to zero
-            self.backward_D_content()   # calculate graidents for D_B
-            self.optimizer_D.step()  # update D_A and D_B's weights
+        # if i%100==0:
+        # # D_A and D_B
+        self.set_requires_grad([self.dis], True)
+        self.optimizer_D.zero_grad()   # set D_A and D_B's gradients to zero
+        self.backward_D_content()   # calculate graidents for D_B
+        self.optimizer_D.step()  # update D_A and D_B's weights
     
     def save_images(self,path,i):
         # 创建目录

@@ -22,8 +22,8 @@ class Generator(nn.Module):
         super(Generator,self).__init__()
 
         # codebook使用VQ-VAE进行编码
-        num_embeddings = 524288 # 嵌入向量数量，过多容易过拟合，过少容易欠拟合
-        embedding_dim = 1 # 1*1
+        num_embeddings = 8192 # 嵌入向量数量，过多容易过拟合，过少容易欠拟合
+        embedding_dim = 64 # 8*8
         commitment_cost = 0.25
         self.vq = VectorQuantizer(num_embeddings, embedding_dim, commitment_cost)
 
@@ -33,11 +33,17 @@ class Generator(nn.Module):
         # construct unet structure
         unet_block = UnetSkipConnectionBlock(ngf * 8, ngf * 8, input_nc=None, submodule=None, norm_layer=norm_layer, innermost=True,vq=self.vq,HMA=self.MHA)  # add the innermost layer
         for i in range(num_downs - 5):          # add intermediate layers with ngf * 8 filters
-            unet_block = UnetSkipConnectionBlock(ngf * 8, ngf * 8, input_nc=None, submodule=unet_block, norm_layer=norm_layer, use_dropout=use_dropout)
+            unet_block = UnetSkipConnectionBlock(ngf * 8, ngf * 8, input_nc=None, submodule=unet_block, norm_layer=norm_layer, use_dropout=use_dropout,nodown=True)
         # gradually reduce the number of filters from ngf * 8 to ngf
         unet_block = UnetSkipConnectionBlock(ngf * 4, ngf * 8, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
+        for i in range(num_downs - 5):          # add intermediate layers with ngf * 8 filters
+            unet_block = UnetSkipConnectionBlock(ngf * 4, ngf * 4, input_nc=None, submodule=unet_block, norm_layer=norm_layer, use_dropout=use_dropout,nodown=True)
         unet_block = UnetSkipConnectionBlock(ngf * 2, ngf * 4, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
+        for i in range(num_downs - 5):          # add intermediate layers with ngf * 8 filters
+            unet_block = UnetSkipConnectionBlock(ngf * 2, ngf * 2, input_nc=None, submodule=unet_block, norm_layer=norm_layer, use_dropout=use_dropout,nodown=True)
         unet_block = UnetSkipConnectionBlock(ngf, ngf * 2, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
+        for i in range(num_downs - 5):          # add intermediate layers with ngf * 8 filters
+            unet_block = UnetSkipConnectionBlock(ngf, ngf, input_nc=None, submodule=unet_block, norm_layer=norm_layer, use_dropout=use_dropout,nodown=True)
         self.model = UnetSkipConnectionBlock(output_nc, ngf, input_nc=input_nc, submodule=unet_block, outermost=True, norm_layer=norm_layer)  # add the outermost layer
 
     def forward(self, input_s,input_c):
@@ -51,7 +57,7 @@ class UnetSkipConnectionBlock(nn.Module):
     """
 
     def __init__(self, outer_nc, inner_nc, input_nc=None,
-                 submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False,HMA = None,vq = None):
+                 submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False,HMA = None,vq = None,nodown = None):
         """Construct a Unet submodule with skip connections.
 
         Parameters:
@@ -106,6 +112,20 @@ class UnetSkipConnectionBlock(nn.Module):
             self.vq = vq
             # MHA多头注意力机制，输入input和vq生成的Query
             self.MHA = HMA
+
+        elif nodown:
+            nodownconv = nn.Conv2d(input_nc, inner_nc, kernel_size=3,
+                     stride=1, padding=1, bias=use_bias)
+            noupconv = nn.Conv2d(inner_nc * 2, outer_nc, kernel_size=3,
+                     stride=1, padding=1, bias=use_bias)
+            
+            down = [downrelu, nodownconv, downnorm]
+            up = [uprelu, noupconv, upnorm]
+            self.down_s = nn.Sequential(*[copy.deepcopy(layer) for layer in down])
+            self.down_c = nn.Sequential(*[copy.deepcopy(layer) for layer in down])
+            self.up = nn.Sequential(*up)
+            self.submodule  = submodule
+
         else:
             upconv = nn.ConvTranspose2d(inner_nc * 2, outer_nc,
                                         kernel_size=4, stride=2,
@@ -123,18 +143,23 @@ class UnetSkipConnectionBlock(nn.Module):
             # else:
             #     model = down + [submodule] + up
 
-    def forward(self, style , content):
+    def forward(self, style , content , i=0):
         if self.outermost:
+            # print(f"{i} layer style input size: {style.size()}")
             down_s = self.down_s(style)
+            # print(f"{i} layer style downsampled size: {down_s.size()}")
             down_c = self.down_c(content)
-            submoduled_s,submoduled_c,vq_loss_s,vq_loss_c = self.submodule(down_s , down_c)
+            submoduled_s,submoduled_c,vq_loss_s,vq_loss_c = self.submodule(down_s , down_c,i+1)
             up_s = self.up(submoduled_s)
-            up_c = self.up(submoduled_c)
+            # print(f"{i} layer style upsampled size: {up_s.size()}")
+            up_c = self.up(submoduled_c) 
             return up_s,up_c,vq_loss_s,vq_loss_c
         else:   # add skip connections
             if self.innermost:
                 # 在最内层先进行下采样
+                # print(f"{i} layer style input size: {style.size()}")
                 down_s = self.down_s(style)
+                # print(f"{i} layer style downsampled size: {down_s.size()}")
                 down_c = self.down_c(content)              
                 # 然后并行地执行MHA和VQ操作               
                 query_s ,vq_loss_s  = self.vq(down_s)
@@ -143,14 +168,18 @@ class UnetSkipConnectionBlock(nn.Module):
                 MHA_c = self.MHA(down_c,query_c)
                 # 执行上采样
                 up_s = self.up(MHA_s)
+                # print(f"{i} layer style upsampled size: {up_s.size()}")
                 up_c = self.up(MHA_c)
                 
                 return torch.cat([style, up_s], 1) , torch.cat([content , up_c],1),vq_loss_s,vq_loss_c
             else:
+                # print(f"{i} layer style input size: {style.size()}")
                 down_s = self.down_s(style)
+                # print(f"{i} layer style downsampled size: {down_s.size()}")
                 down_c = self.down_c(content)
-                submoduled_s,submoduled_c,vq_loss_s,vq_loss_c = self.submodule(down_s , down_c)
+                submoduled_s,submoduled_c,vq_loss_s,vq_loss_c = self.submodule(down_s , down_c ,i+1)
                 up_s = self.up(submoduled_s)
                 up_c = self.up(submoduled_c)
-                # 对于非最内层，添加skip连接和子模块
+                # 对于非最内层，添加skip连接和子模块            
+                # print(f"{i} layer style upsampled size: {up_s.size()}")
                 return torch.cat([style, up_s], 1) , torch.cat([content , up_c],1),vq_loss_s,vq_loss_c
