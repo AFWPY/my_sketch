@@ -19,6 +19,7 @@ class VectorQuantizer(nn.Module):
         # convert inputs from BCHW
         input_shape = inputs.shape
 
+        
         # Flatten input ->[BC HW]
         flat_input = inputs.view(-1, self._embedding_dim)
 
@@ -34,10 +35,11 @@ class VectorQuantizer(nn.Module):
 
         # Quantize and unflatten
         quantized = torch.matmul(encodings, self._embedding.weight).view(input_shape)
-
+        
         # Loss
         e_latent_loss = F.mse_loss(quantized.detach(), inputs)
         q_latent_loss = F.mse_loss(quantized, inputs.detach())
+        
         if key == "Content":
             loss = e_latent_loss
         else:

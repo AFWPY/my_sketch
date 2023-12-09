@@ -23,7 +23,7 @@ class Generator(nn.Module):
 
         # codebook使用VQ-VAE进行编码
         num_embeddings = 8192 # 嵌入向量数量，过多容易过拟合，过少容易欠拟合
-        embedding_dim = 64 # 8*8
+        embedding_dim = 64*512 # 8*8
         commitment_cost = 0.25
         self.vq = VectorQuantizer(num_embeddings, embedding_dim, commitment_cost)
 
@@ -36,14 +36,14 @@ class Generator(nn.Module):
             unet_block = UnetSkipConnectionBlock(ngf * 8, ngf * 8, input_nc=None, submodule=unet_block, norm_layer=norm_layer, use_dropout=use_dropout,nodown=True)
         # gradually reduce the number of filters from ngf * 8 to ngf
         unet_block = UnetSkipConnectionBlock(ngf * 4, ngf * 8, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
-        for i in range(num_downs - 5):          # add intermediate layers with ngf * 8 filters
-            unet_block = UnetSkipConnectionBlock(ngf * 4, ngf * 4, input_nc=None, submodule=unet_block, norm_layer=norm_layer, use_dropout=use_dropout,nodown=True)
+        # for i in range(num_downs - 5):          # add intermediate layers with ngf * 8 filters
+        #     unet_block = UnetSkipConnectionBlock(ngf * 4, ngf * 4, input_nc=None, submodule=unet_block, norm_layer=norm_layer, use_dropout=use_dropout,nodown=True)
         unet_block = UnetSkipConnectionBlock(ngf * 2, ngf * 4, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
-        for i in range(num_downs - 5):          # add intermediate layers with ngf * 8 filters
-            unet_block = UnetSkipConnectionBlock(ngf * 2, ngf * 2, input_nc=None, submodule=unet_block, norm_layer=norm_layer, use_dropout=use_dropout,nodown=True)
+        # for i in range(num_downs - 5):          # add intermediate layers with ngf * 8 filters
+        #     unet_block = UnetSkipConnectionBlock(ngf * 2, ngf * 2, input_nc=None, submodule=unet_block, norm_layer=norm_layer, use_dropout=use_dropout,nodown=True)
         unet_block = UnetSkipConnectionBlock(ngf, ngf * 2, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
-        for i in range(num_downs - 5):          # add intermediate layers with ngf * 8 filters
-            unet_block = UnetSkipConnectionBlock(ngf, ngf, input_nc=None, submodule=unet_block, norm_layer=norm_layer, use_dropout=use_dropout,nodown=True)
+        # for i in range(num_downs - 5):          # add intermediate layers with ngf * 8 filters
+        #     unet_block = UnetSkipConnectionBlock(ngf, ngf, input_nc=None, submodule=unet_block, norm_layer=norm_layer, use_dropout=use_dropout,nodown=True)
         self.model = UnetSkipConnectionBlock(output_nc, ngf, input_nc=input_nc, submodule=unet_block, outermost=True, norm_layer=norm_layer)  # add the outermost layer
 
     def forward(self, input_s,input_c):
