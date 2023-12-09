@@ -6,7 +6,11 @@ class CustomDataset(Dataset):
     def __init__(self, root, transform=None):
         self.image_paths = root
         self.imgs = self.read_file(self.image_paths)
-        self.transform = transform
+        if transform is None:
+            self.transform = transforms.Compose([transforms.Resize((256, 256)),
+                                          transforms.ToTensor()])
+        else:
+            self.transform = transform
 
         self.dir_A = os.path.join(root, 'train' + 'A')  # create a path '/path/to/data/trainA'
         self.dir_B = os.path.join(root, 'train' + 'B')  # create a path '/path/to/data/trainB'
