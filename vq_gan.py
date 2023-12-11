@@ -1,14 +1,17 @@
 import torch
 import torch.nn as nn
-from networks import UnetSkipConnectionBlock,VectorQuantizerBlock,ResnetBlock
+from networks import UnetSkipConnectionBlock,VectorQuantizerBlock,ResnetBlock,GANLoss
 import functools
 from util.image_pool import ImagePool
-from model.networks import GANLoss
 import itertools
 import os
 from torchvision.transforms import ToPILImage
 import torch.nn.functional as F
 import torchvision.models as models
+import argparse
+from dataset import CustomDataset
+from torch.utils.data import Dataset, DataLoader
+import time
 
 class UnetGenerator(nn.Module):
     """
@@ -106,12 +109,26 @@ class ResnetGenerator(nn.Module):
         self.down_s = nn.Sequential(*down_s)
         self.up = nn.Sequential(*up)
         self.ResBlocks = nn.Sequential(*ResBlocks)
+        
+    def set_requires_grad(self, nets, requires_grad=False):
+        """Set requies_grad=Fasle for all the networks to avoid unnecessary computations
+        Parameters:
+            nets (network list)   -- a list of networks
+            requires_grad (bool)  -- whether the networks require gradients or not
+        """
+        if not isinstance(nets, list):
+            nets = [nets]
+        for net in nets:
+            if net is not None:
+                for param in net.parameters():
+                    param.requires_grad = requires_grad
+                    
     def forward(self, input_p,input_s):
         """Standard forward"""
         down_p = self.down_p(input_p)
         down_s = self.down_s(input_s)
 
-        vq_p,vqloss_p = self.vq(down_p,key = "Context")
+        vq_p,vqloss_p = self.vq(down_p,key = "Content")
         vq_s,vqloss_s = self.vq(down_s)
 
         res_p = self.ResBlocks(vq_p)
@@ -164,19 +181,20 @@ class NLayerDiscriminator(nn.Module):
         """Standard forward."""
         return self.model(input)
     
-class model(nn.Modules):
+class model(nn.Module):
     def __init__(self):
         super(model, self).__init__()
-        self.gen = ResnetGenerator(input_nc=3, output_nc=3,n_blocks=9)
-        self.dis = NLayerDiscriminator(3,64)
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.gen = ResnetGenerator(input_nc=3, output_nc=3,n_blocks=9).to(self.device)
+        self.dis = NLayerDiscriminator(3,64).to(self.device)
 
-        if torch.cuda.device_count() > 1:
-            self.gen = nn.DataParallel(self.gen,device_ids=[0, 1])
-            self.dis = nn.DataParallel(self.dis,device_ids=[0, 1])
+#         if torch.cuda.device_count() > 1:
+#             self.gen = nn.DataParallel(self.gen,device_ids=[0, 1])
+#             self.dis = nn.DataParallel(self.dis,device_ids=[0, 1])
         
         self.criterionGAN = GANLoss('lsgan').to(self.device)
         self.criterionCycle = torch.nn.L1Loss().to(self.device)
-        self.criterionRec = F.mse_loss().to(self.device)
+        self.criterionRec = nn.MSELoss().to(self.device)
 
 
         #使用vgg19特征层
@@ -273,17 +291,99 @@ class model(nn.Modules):
             os.makedirs(path)
 
         # 将张量转换为PIL图像
-        image_s = ToPILImage()(self.fake_style[0].cpu())
-        image_c = ToPILImage()(self.fake_content[0].cpu())
+        image_s = ToPILImage()(self.fake_s[0].cpu())
+        image_p = ToPILImage()(self.fake_p[0].cpu())
         
 
         # 生成文件名，确保将i转换为字符串
         filename_s = f'image_s_{i}.png'
-        filename_c = f'image_c_{i}.png'
+        filename_p = f'image_p_{i}.png'
 
         # 构造完整的文件路径
         full_path_s = os.path.join(path, filename_s)
-        full_path_c = os.path.join(path, filename_c)
+        full_path_p = os.path.join(path, filename_p)
         # 然后保存图像
         image_s.save(full_path_s)
-        image_c.save(full_path_c)
+        image_p.save(full_path_p)
+        
+    def set_requires_grad(self, nets, requires_grad=False):
+        """Set requies_grad=Fasle for all the networks to avoid unnecessary computations
+        Parameters:
+            nets (network list)   -- a list of networks
+            requires_grad (bool)  -- whether the networks require gradients or not
+        """
+        if not isinstance(nets, list):
+            nets = [nets]
+        for net in nets:
+            if net is not None:
+                for param in net.parameters():
+                    param.requires_grad = requires_grad
+                    
+    def get_current_losses(self,epoch):
+        print(f'epoch:{epoch} loss_vq:{self.loss_vq} loss_G_content:{self.loss_G_content} loss_precs:{self.loss_precs} loss_G_style_rec:{self.loss_G_style_rec} ')
+    
+                    
+def setup_opt():
+    """
+    setup_opt
+    """
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--name', type=str, default='experiment_name', help='name of the experiment. It decides where to store samples and models')
+    parser.add_argument("--resume", default=None, help="path/to/saved/.pth")
+    parser.add_argument('--dataroot', required=True, help='path to images (should have subfolders trainA, trainB, valA, valB, etc)')
+    parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
+    parser.add_argument('--num_threads', default=32, type=int, help='# threads for loading data')
+    parser.add_argument('--batch_size', type=int, default=8, help='input batch size')
+    parser.add_argument('--load_size', type=int, default=286, help='scale images to this size')
+    parser.add_argument('--crop_size', type=int, default=256, help='then crop to this size')
+    parser.add_argument('--dataset_mode', type=str, default='unaligned', help='chooses how datasets are loaded. [unaligned | aligned | single | colorization]')
+    parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')
+    parser.add_argument('--max_dataset_size', type=int, default=float("inf"), help='Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded.')
+    parser.add_argument('--preprocess', type=str, default='resize_and_crop', help='scaling and cropping of images at load time [resize_and_crop | crop | scale_width | scale_width_and_crop | none]')
+    parser.add_argument('--n_epochs', type=int, default=200000, help='number of epochs with the initial learning rate')
+    
+    opt = parser.parse_args()
+
+    return opt
+                    
+if __name__ == "__main__":
+    
+    opt = setup_opt()
+    # 创建数据集
+    train_data_root = "./data/CUHK/"
+    dataset = CustomDataset(root=train_data_root)
+
+    # 创建数据加载器
+    dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
+    model = model()
+    
+    # 确保这里的目录结构存在
+    os.makedirs(os.path.join(opt.checkpoints_dir, opt.name), exist_ok=True)
+
+    # 文件路径
+    log_name = os.path.join(opt.checkpoints_dir, opt.name, 'loss_log.txt')
+
+    image_path = os.path.join(opt.checkpoints_dir, opt.name)
+
+    for epoch in range(opt.n_epochs):
+        epoch_start_time = time.time()  # timer for entire epoch
+        # model.update_learning_rate()
+        
+        for data in dataloader:
+            model.set_input(data)         # unpack data from dataset and apply preprocessing
+            model.optimize_parameters()
+
+        if epoch % 100 == 0:
+            model.save_images(image_path,epoch) 
+             # 打印loss
+            model.get_current_losses(epoch)
+
+        # 保存模型
+        if epoch % 1000 == 0:
+            torch.save(model.state_dict(), f'{opt.checkpoints_dir}/{opt.name}/model_weights_epoch_{epoch}.pth')
+        
+       
+
+        print('End of epoch %d / %d \t Time Taken: %d sec' % (epoch, opt.n_epochs, time.time() - epoch_start_time))
+
