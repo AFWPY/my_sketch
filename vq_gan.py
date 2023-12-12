@@ -225,25 +225,31 @@ class model(nn.Module):
         """
         self.photo= input['A'].to(self.device)
         self.sketch = input['B'].to(self.device)
-        self.image_style = input['A_paths']
-        self.image_content = input['B_paths']
+        self.sketch_r = input['C'].to(self.device)
+        self.image_p = input['A_paths']
+        self.image_s = input['B_paths']
+        self.image_sr = input['C_paths']
 
 
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
-        self.fake_p,self.fake_s,self.vq_loss_p,self.vq_loss_s = self.gen(self.photo,self.sketch)
+        self.fake_p,self.fake_s,self.vq_loss_p,self.vq_loss_s = self.gen(self.photo,self.sketch_r)
 
     def backward_G(self):
         #由照片生成的图片和判别器的对抗损失
         self.loss_G_content = self.criterionGAN(self.dis(self.fake_p), True)
-        #由照片生成的图片和素描图片的特征对比损失
+        #由照片生成的图片和对应素描图片的特征对比损失
         self.loss_precs = self.criterionRec(self.gram_matrix(self.vgg_f(self.fake_p)), self.gram_matrix(self.vgg_f(self.sketch)))
+        #由照片生成的图片还原损失
+        self.loss_G_content_rec = self.criterionRec(self.fake_p, self.sketch)
         #由素描生成的图片还原损失
-        self.loss_G_style_rec = self.criterionRec(self.fake_s, self.sketch)
+        self.loss_G_style_rec = self.criterionRec(self.fake_s, self.sketch_r)
+        #由素描生成的图片和判别器的对抗损失
+        self.loss_G_sketch = self.criterionGAN(self.dis(self.fake_s), True)
         #vq损失
         self.loss_vq = (self.vq_loss_p + self.vq_loss_s)*0.5
 
-        self.loss_G = self.loss_G_content + self.loss_precs + self.loss_vq
+        self.loss_G = self.loss_G_content + self.loss_precs + self.loss_G_content_rec + self.loss_G_style_rec + self.loss_G_sketch + self.loss_vq
         # 如果self.loss_G是一个向量而不是标量，那么对其取平均得到标量
         if self.loss_G.dim() > 0:  # 检查loss_G是否为标量
             self.loss_G = self.loss_G.mean()
@@ -320,7 +326,7 @@ class model(nn.Module):
                     param.requires_grad = requires_grad
                     
     def get_current_losses(self,epoch):
-        print(f'epoch:{epoch} loss_vq:{self.loss_vq} loss_G_content:{self.loss_G_content} loss_precs:{self.loss_precs} loss_G_style_rec:{self.loss_G_style_rec} ')
+        print(f'epoch:{epoch} loss_vq:{self.loss_vq} loss_G_content:{self.loss_G_content} loss_precs:{self.loss_precs} loss_G_style_rec:{self.loss_G_style_rec} loss_G_content_rec:{self.loss_G_content_rec} loss_G_sketch:{self.loss_G_sketch}')
     
                     
 def setup_opt():
