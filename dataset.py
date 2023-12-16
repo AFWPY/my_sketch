@@ -49,7 +49,7 @@ class CustomDataset(Dataset):
         # else:   # randomize the index for domain B to avoid fixed pairs.
         B_path = self.B_paths[index % self.B_size]
         index_B = random.randint(0, self.B_size - 1)
-        C_path = self.B_paths[index_B % self.B_size]
+        C_path = self.B_paths[index_B % self.B_size]       
         A_img = Image.open(A_path).convert('RGB')
         B_img = Image.open(B_path).convert('RGB')
         C_img = Image.open(C_path).convert('RGB')
@@ -58,7 +58,8 @@ class CustomDataset(Dataset):
         B = self.transform(B_img) # 对应的素描,不做训练只做loss计算
         C = self.transformC(C_img)
         C = self.transform(C) # 随机素描，作为训练
-        return {'A': A, 'B': B, 'C': C, 'A_paths': A_path, 'B_paths': B_path, 'C_paths': C_path}
+        CT = self.transform(C_img)
+        return {'A': A, 'B': B, 'C': C, 'CT': CT,'A_paths': A_path, 'B_paths': B_path, 'C_paths': C_path}
     
 
 # 自定义高斯模糊函数

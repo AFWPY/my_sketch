@@ -226,6 +226,7 @@ class model(nn.Module):
         self.photo= input['A'].to(self.device)
         self.sketch = input['B'].to(self.device)
         self.sketch_r = input['C'].to(self.device)
+        self.sketch_rt = input['CT'].to(self.device)
         self.image_p = input['A_paths']
         self.image_s = input['B_paths']
         self.image_sr = input['C_paths']
@@ -233,23 +234,26 @@ class model(nn.Module):
 
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
-        self.fake_p,self.fake_s,self.vq_loss_p,self.vq_loss_s = self.gen(self.photo,self.sketch_r)
+        self.fake_p,self.fake_s,self.vq_loss_p,self.vq_loss_s = self.gen(self.photo,self.sketch_rt)
 
-    def backward_G(self):
+    def backward_G(self,i):
         #由照片生成的图片和判别器的对抗损失
+        if(i<50000):
+            GM_p = 0
+        else:
+            GM_p = 10
         self.loss_G_content = self.criterionGAN(self.dis(self.fake_p), True)
-        #由照片生成的图片和对应素描图片的特征对比损失
-        self.loss_precs = self.criterionRec(self.gram_matrix(self.vgg_f(self.fake_p)), self.gram_matrix(self.vgg_f(self.sketch)))
+        # #由照片生成的图片和对应素描图片的特征对比损失
+        # self.loss_precs = self.criterionRec((self.vgg_f(self.fake_p)), (self.vgg_f(self.sketch)))
         #由照片生成的图片还原损失
         self.loss_G_content_rec = self.criterionRec(self.fake_p, self.sketch)
         #由素描生成的图片还原损失
-        self.loss_G_style_rec = self.criterionRec(self.fake_s, self.sketch_r)
-        #由素描生成的图片和判别器的对抗损失
-        self.loss_G_sketch = self.criterionGAN(self.dis(self.fake_s), True)
+        self.loss_G_style_rec = self.criterionRec(self.fake_s, self.sketch_rt)
+        
         #vq损失
-        self.loss_vq = (self.vq_loss_p + self.vq_loss_s)*0.5
+        self.loss_vq = (self.vq_loss_p*GM_p + self.vq_loss_s*10)*0.5
 
-        self.loss_G = self.loss_G_content + self.loss_precs + self.loss_G_content_rec + self.loss_G_style_rec + self.loss_G_sketch + self.loss_vq
+        self.loss_G = self.loss_G_content*GM_p + self.loss_G_content_rec*GM_p + self.loss_G_style_rec*10  + self.loss_vq
         # 如果self.loss_G是一个向量而不是标量，那么对其取平均得到标量
         if self.loss_G.dim() > 0:  # 检查loss_G是否为标量
             self.loss_G = self.loss_G.mean()
@@ -276,14 +280,18 @@ class model(nn.Module):
         fake = self.fake_content_pool.query(self.fake_p)
         self.loss_D_content = self.backward_D_basic(self.dis, self.sketch, fake) # 判别生成的风格内容图和风格图
 
-    def optimize_parameters(self):
+    def optimize_parameters(self,i):
         """Calculate losses, gradients, and update network weights; called in every training iteration"""
         # forward
         self.forward()      # compute fake images and reconstruction images.
         # G_A and G_B
         self.set_requires_grad([self.dis], False)  # Ds require no gradients when optimizing Gs
+        if (i<50000):
+            self.set_requires_grad([self.gen.down_p], False)
+        else:
+            self.set_requires_grad([self.gen.down_p], True)
         self.optimizer_G.zero_grad()  # set G_A and G_B's gradients to zero
-        self.backward_G()             # calculate gradients for G_A and G_B
+        self.backward_G(i)             # calculate gradients for G_A and G_B
         self.optimizer_G.step()       # update G_A and G_B's weights
         
         self.set_requires_grad([self.dis], True)
@@ -326,7 +334,7 @@ class model(nn.Module):
                     param.requires_grad = requires_grad
                     
     def get_current_losses(self,epoch):
-        print(f'epoch:{epoch} loss_vq:{self.loss_vq} loss_G_content:{self.loss_G_content} loss_precs:{self.loss_precs} loss_G_style_rec:{self.loss_G_style_rec} loss_G_content_rec:{self.loss_G_content_rec} loss_G_sketch:{self.loss_G_sketch}')
+        print(f'epoch:{epoch} loss_vq:{self.loss_vq} loss_G_content:{self.loss_G_content} loss_G_style_rec:{self.loss_G_style_rec} loss_G_content_rec:{self.loss_G_content_rec}')
     
                     
 def setup_opt():
@@ -347,7 +355,7 @@ def setup_opt():
     parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')
     parser.add_argument('--max_dataset_size', type=int, default=float("inf"), help='Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded.')
     parser.add_argument('--preprocess', type=str, default='resize_and_crop', help='scaling and cropping of images at load time [resize_and_crop | crop | scale_width | scale_width_and_crop | none]')
-    parser.add_argument('--n_epochs', type=int, default=100000, help='number of epochs with the initial learning rate')
+    parser.add_argument('--n_epochs', type=int, default=200000, help='number of epochs with the initial learning rate')
     
     opt = parser.parse_args()
 
@@ -379,9 +387,9 @@ if __name__ == "__main__":
         
         for data in dataloader:
             model.set_input(data)         # unpack data from dataset and apply preprocessing
-            model.optimize_parameters()
+            model.optimize_parameters(epoch)
 
-        if epoch % 100 == 0:
+        if epoch % 1000 == 0:
             model.save_images(image_path,epoch) 
              # 打印loss
             model.get_current_losses(epoch)
@@ -390,7 +398,5 @@ if __name__ == "__main__":
         if epoch % 10000 == 0:
             torch.save(model.state_dict(), f'{opt.checkpoints_dir}/{opt.name}/model_weights_epoch_{epoch}.pth')
         
-       
-        if(epoch % 100 ==0):
-            print('End of epoch %d / %d \t Time Taken: %d sec' % (epoch, opt.n_epochs, time.time() - epoch_start_time))
+
 
