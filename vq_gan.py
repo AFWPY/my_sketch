@@ -252,7 +252,7 @@ class model(nn.Module):
         
         
         self.loss_photo = self.loss_precs + self.loss_G_content + self.loss_G_content_rec*0 + self.vq_loss_p
-        self.loss_sketch = self.loss_G_style_rec*1000 + self.vq_loss_s*10
+        self.loss_sketch = self.loss_G_style_rec + self.vq_loss_s*10
 
         self.loss_G = self.loss_photo*GM_p + self.loss_sketch*10
         # 如果self.loss_G是一个向量而不是标量，那么对其取平均得到标量
