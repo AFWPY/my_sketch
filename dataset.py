@@ -10,11 +10,13 @@ class CustomDataset(Dataset):
         self.image_paths = root
         self.imgs = self.read_file(self.image_paths)
         if transform is None:
-            self.transform = transforms.Compose([transforms.RandomResizedCrop(268, scale=(0.2, 1.0)),
+            self.transform = transforms.Compose([
+                # transforms.RandomResizedCrop(268, scale=(0.2, 1.0)),
                 transforms.RandomHorizontalFlip(),
                 transforms.Resize((256, 256)),
                 transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+                ])
         else:
             self.transform = transform
 

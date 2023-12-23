@@ -12,7 +12,7 @@ import argparse
 from dataset import CustomDataset
 from torch.utils.data import Dataset, DataLoader
 import time
-
+import shutil
 class UnetGenerator(nn.Module):
     """
     Generator
@@ -234,26 +234,27 @@ class model(nn.Module):
 
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
-        self.fake_p,self.fake_s,self.vq_loss_p,self.vq_loss_s = self.gen(self.photo,self.sketch_rt)
+        self.fake_p,self.fake_s,self.vq_loss_p,self.vq_loss_s = self.gen(self.photo,self.sketch)
 
     def backward_G(self,i):
         #由照片生成的图片和判别器的对抗损失
         if(i<50000):
-            GM_p = 0
+            GM_p = 0.1
         else:
             GM_p = 10
         self.loss_G_content = self.criterionGAN(self.dis(self.fake_p), True)
-        # #由照片生成的图片和对应素描图片的特征对比损失
-        # self.loss_precs = self.criterionRec((self.vgg_f(self.fake_p)), (self.vgg_f(self.sketch)))
+        # #由照片生成的图片和原图片的使用vgg19特征对比损失
+        self.loss_precs = self.criterionRec((self.vgg_f(self.fake_p)), (self.vgg_f(self.sketch)))
         #由照片生成的图片还原损失
         self.loss_G_content_rec = self.criterionRec(self.fake_p, self.sketch)
         #由素描生成的图片还原损失
-        self.loss_G_style_rec = self.criterionRec(self.fake_s, self.sketch_rt)
+        self.loss_G_style_rec = self.criterionRec(self.fake_s, self.sketch)
         
-        #vq损失
-        self.loss_vq = (self.vq_loss_p*GM_p + self.vq_loss_s*10)*0.5
+        
+        self.loss_photo = self.loss_precs + self.loss_G_content + self.loss_G_content_rec*1000 + self.vq_loss_p
+        self.loss_sketch = self.loss_G_style_rec*1000 + self.vq_loss_s*10
 
-        self.loss_G = self.loss_G_content*GM_p + self.loss_G_content_rec*GM_p + self.loss_G_style_rec*10  + self.loss_vq
+        self.loss_G = self.loss_photo*GM_p + self.loss_sketch*10
         # 如果self.loss_G是一个向量而不是标量，那么对其取平均得到标量
         if self.loss_G.dim() > 0:  # 检查loss_G是否为标量
             self.loss_G = self.loss_G.mean()
@@ -333,8 +334,10 @@ class model(nn.Module):
                 for param in net.parameters():
                     param.requires_grad = requires_grad
                     
-    def get_current_losses(self,epoch):
-        print(f'epoch:{epoch} loss_vq:{self.loss_vq} loss_G_content:{self.loss_G_content} loss_G_style_rec:{self.loss_G_style_rec} loss_G_content_rec:{self.loss_G_content_rec}')
+    def get_current_losses(self,epoch,log_name):
+        content = f'epoch:{epoch}  loss_G_content:{self.loss_G_content}  loss_precs:{self.loss_precs} loss_G_style_rec:{self.loss_G_style_rec} loss_G_content_rec:{self.loss_G_content_rec}'
+        with open(log_name,'a') as file:
+            file.write(content)
     
                     
 def setup_opt():
@@ -373,11 +376,16 @@ if __name__ == "__main__":
     model = model()
     
     # 确保这里的目录结构存在
-    os.makedirs(os.path.join(opt.checkpoints_dir, opt.name), exist_ok=True)
-
+    log_dir = os.path.join(opt.checkpoints_dir, opt.name)
+    shutil.rmtree(log_dir)
+    os.makedirs(log_dir, exist_ok=True)
+    
     # 文件路径
     log_name = os.path.join(opt.checkpoints_dir, opt.name, 'loss_log.txt')
-
+    # 检查文件是否存在，如果不存在则创建
+    if not os.path.exists(log_name):
+        with open(log_name, 'w') as log_file:
+            pass
     image_path = os.path.join(opt.checkpoints_dir, opt.name)
 
     for epoch in range(opt.n_epochs):
@@ -391,8 +399,9 @@ if __name__ == "__main__":
 
         if epoch % 1000 == 0:
             model.save_images(image_path,epoch) 
+            
              # 打印loss
-            model.get_current_losses(epoch)
+            model.get_current_losses(epoch,log_name)
 
         # 保存模型
         if epoch % 10000 == 0:
