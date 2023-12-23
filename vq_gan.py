@@ -251,7 +251,7 @@ class model(nn.Module):
         self.loss_G_style_rec = self.criterionRec(self.fake_s, self.sketch)
         
         
-        self.loss_photo = self.loss_precs + self.loss_G_content + self.loss_G_content_rec*1000 + self.vq_loss_p
+        self.loss_photo = self.loss_precs + self.loss_G_content + self.loss_G_content_rec*0 + self.vq_loss_p
         self.loss_sketch = self.loss_G_style_rec*1000 + self.vq_loss_s*10
 
         self.loss_G = self.loss_photo*GM_p + self.loss_sketch*10
@@ -337,7 +337,7 @@ class model(nn.Module):
     def get_current_losses(self,epoch,log_name):
         content = f'epoch:{epoch}  loss_G_content:{self.loss_G_content}  loss_precs:{self.loss_precs} loss_G_style_rec:{self.loss_G_style_rec} loss_G_content_rec:{self.loss_G_content_rec}'
         with open(log_name,'a') as file:
-            file.write(content)
+            file.write(content+'\n')
     
                     
 def setup_opt():
@@ -377,9 +377,9 @@ if __name__ == "__main__":
     
     # 确保这里的目录结构存在
     log_dir = os.path.join(opt.checkpoints_dir, opt.name)
-    shutil.rmtree(log_dir)
-    os.makedirs(log_dir, exist_ok=True)
     
+    os.makedirs(log_dir, exist_ok=True)
+    # shutil.rmtree(log_dir)
     # 文件路径
     log_name = os.path.join(opt.checkpoints_dir, opt.name, 'loss_log.txt')
     # 检查文件是否存在，如果不存在则创建
