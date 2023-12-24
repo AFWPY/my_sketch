@@ -238,7 +238,6 @@ class model(nn.Module):
 
     def backward_G(self,i):
         #由照片生成的图片和判别器的对抗损失
-
         self.loss_G_content = self.criterionGAN(self.dis(self.fake_p), True)
         # #由照片生成的图片和原图片的使用vgg19特征对比损失
         self.loss_precs = self.criterionRec((self.vgg_f(self.fake_p)), (self.vgg_f(self.photo)))
@@ -250,7 +249,10 @@ class model(nn.Module):
         self.loss_photo = self.loss_precs + self.loss_G_content + self.loss_G_content_rec*1000 + self.vq_loss_p
         self.loss_sketch = self.loss_G_style_rec*1000 + self.vq_loss_s*10
 
-        self.loss_G = self.loss_photo + self.loss_sketch*10
+        if(i>50000):
+            self.loss_G = self.loss_photo + self.loss_sketch
+        else:
+            self.loss_G = self.loss_sketch
         # 如果self.loss_G是一个向量而不是标量，那么对其取平均得到标量
         if self.loss_G.dim() > 0:  # 检查loss_G是否为标量
             self.loss_G = self.loss_G.mean()
@@ -385,15 +387,12 @@ if __name__ == "__main__":
     image_path = os.path.join(opt.checkpoints_dir, opt.name)
 
     for epoch in range(opt.n_epochs):
-        if(epoch % 100 ==0):
-            epoch_start_time = time.time()  # timer for entire epoch
-        # model.update_learning_rate()
-        
+             
         for data in dataloader:
             model.set_input(data)         # unpack data from dataset and apply preprocessing
             model.optimize_parameters(epoch)
 
-        if epoch % 1000 == 0:
+        if epoch % 10000 == 0:
             model.save_images(image_path,epoch) 
             
              # 打印loss
