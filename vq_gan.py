@@ -249,10 +249,8 @@ class model(nn.Module):
         self.loss_photo = self.loss_precs + self.loss_G_content + self.loss_G_content_rec*1000 + self.vq_loss_p
         self.loss_sketch = self.loss_G_style_rec*1000 + self.vq_loss_s*10
 
-        if(i>50000):
-            self.loss_G = self.loss_photo + self.loss_sketch
-        else:
-            self.loss_G = self.loss_sketch
+        self.loss_G = self.loss_photo + self.loss_sketch
+        
         # 如果self.loss_G是一个向量而不是标量，那么对其取平均得到标量
         if self.loss_G.dim() > 0:  # 检查loss_G是否为标量
             self.loss_G = self.loss_G.mean()
@@ -285,10 +283,6 @@ class model(nn.Module):
         self.forward()      # compute fake images and reconstruction images.
         # G_A and G_B
         self.set_requires_grad([self.dis], False)  # Ds require no gradients when optimizing Gs
-        if (i<50000):
-            self.set_requires_grad([self.gen.down_p], False)
-        else:
-            self.set_requires_grad([self.gen.down_p], True)
         self.optimizer_G.zero_grad()  # set G_A and G_B's gradients to zero
         self.backward_G(i)             # calculate gradients for G_A and G_B
         self.optimizer_G.step()       # update G_A and G_B's weights
